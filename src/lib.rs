@@ -1,44 +1,57 @@
-// load rand
-extern crate rand;
-use rand::Rng;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use lazy_static::lazy_static;
+use rand::prelude::*;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::iter::ParallelIterator;
 
-//  an adjacency matrix with a constant,runtime set number of vertices
-pub const NUM_VERTICES: usize = 100;
-pub struct AdjacencyMatrix {
-    matrix: [[bool; NUM_VERTICES]; NUM_VERTICES],
+pub const BETA: f32 = 1.0;
+pub const NUM_VERTICES: usize = 100 * 100;
+
+lazy_static! {
+    static ref EXP_TABLE: [f32; 2001] = {
+        let mut table = [0.0; 2001];
+        for i in -1000..=1000 {
+            table[(i + 1000) as usize] = (i as f32 * BETA).exp();
+        }
+        table
+    };
 }
 
-impl AdjacencyMatrix {
+fn exp(n: i32) -> f32 {
+    if -1000 <= n && n <= 1000 {
+        return EXP_TABLE[(n + 1000) as usize];
+    };
+    (n as f32 * BETA).exp()
+}
+//  an adjacency matrix with a constant,runtime set number of vertices
+pub struct Network {
+    edges: Vec<(usize, usize)>,
+    neighbors: Vec<Vec<usize>>,
+}
+
+impl Default for Network {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Network {
     pub fn new() -> Self {
-        AdjacencyMatrix {
-            matrix: [[false; NUM_VERTICES]; NUM_VERTICES],
+        let mut neighbors = vec![];
+        for i in 0..NUM_VERTICES {
+            neighbors.push(vec![i]);
+        }
+        Network {
+            edges: vec![],
+            neighbors,
         }
     }
 
     pub fn add_edge(&mut self, i: usize, j: usize) {
-        self.matrix[i][j] = true;
-        self.matrix[j][i] = true;
-    }
-
-    pub fn remove_edge(&mut self, i: usize, j: usize) {
-        self.matrix[i][j] = false;
-        self.matrix[j][i] = false;
-    }
-
-    pub fn has_edge(&self, i: usize, j: usize) -> bool {
-        self.matrix[i][j]
-    }
-
-    pub fn neighbors(&self, i: usize) -> Vec<usize> {
-        // return the indices of "true"s in the row
-        let mut neighbors = Vec::new();
-        for j in 0..NUM_VERTICES {
-            if self.matrix[i][j] {
-                neighbors.push(j);
-            }
-        }
-        neighbors
+        self.edges.push((i, j));
+        self.neighbors[i].push(j);
+        self.neighbors[j].push(i);
     }
 }
 
@@ -65,67 +78,73 @@ pub fn play_game(agent1: Agent, agent2: Agent) -> (i32, i32) {
     (agent1_payoff, agent2_payoff)
 }
 
-pub fn play_tournament(matrix: &AdjacencyMatrix, agents: Vec<Agent>) -> Vec<Agent> {
-    let mut new_agents = agents.clone();
-    for i in 0..NUM_VERTICES {
-        let neighbors = matrix.neighbors(i);
-        for j in neighbors {
-            let (agent1_payoff, agent2_payoff) = play_game(agents[i], agents[j]);
-            new_agents[i].score += agent1_payoff;
-            new_agents[j].score += agent2_payoff;
-        }
+pub fn play_tournament(agents: &mut Vec<Agent>, matrix: &Network) {
+    for (i, j) in matrix.edges.iter() {
+        let (agent_1_payoff, agent2_payoff) = play_game(agents[*i], agents[*j]);
+        agents[*i].score += agent_1_payoff;
+        agents[*j].score += agent2_payoff;
     }
-    new_agents
 }
 
-pub fn update_strategies(agents: Vec<Agent>, matrix: &AdjacencyMatrix) -> Vec<Agent> {
-    let beta = 1.;
-    let mut new_agents = agents.clone();
-    for i in 0..NUM_VERTICES {
-        let neighbors = matrix.neighbors(i);
+fn get_new_strat(
+    agents: &Vec<Agent>,
+    network: &Network,
+    index: usize,
+    random_number: f32,
+) -> Strategy {
+    let neighbors = network.neighbors.get(index).unwrap();
 
-        // find the total score for each strategy in the neighborhood
-        let mut scores = [0; 3];
-        for j in neighbors {
-            scores[agents[j].strategy as usize] += agents[j].score;
-        }
+    // find the total score for each strategy in the neighborhood
+    let mut scores = [0; 3];
 
-        // randomly select a strategy according to a modified boltzmann distribution
-        let mut total = 0.;
-        for score in &scores {
-            // sum the exponentials
-            total += (*score as f32 * beta).exp();
-        }
-
-        let probabilities = scores
-            .iter()
-            .map(|score| (*score as f32 * beta).exp() / total)
-            .collect::<Vec<f32>>();
-
-        // randomly select a strategy weighted by the probabilities
-        let mut cumulative = 0.;
-        let random_number = rand::random::<f32>();
-        let mut new_strategy = Strategy::Rock;
-
-        for (strategy, &probability) in [Strategy::Rock, Strategy::Paper, Strategy::Scissors]
-            .iter()
-            .zip(probabilities.iter())
-        {
-            cumulative += probability;
-            if random_number < cumulative {
-                new_strategy = *strategy;
-                break;
-            }
-        }
-
-        new_agents[i].strategy = new_strategy;
+    for &j in neighbors {
+        scores[agents[j].strategy as usize] += agents[j].score;
     }
-    new_agents
+
+    let mut probabilities = [0.0; 3];
+    for i in 0..3 {
+        probabilities[i] = exp(scores[i]);
+    }
+
+    // Calculate total without cloning
+    let total: f32 = probabilities.iter().sum();
+    let threshold = random_number * total;
+
+    // Use early returns to avoid unnecessary iterations
+    let mut cumulative = probabilities[0];
+    if threshold < cumulative {
+        return Strategy::Rock;
+    }
+
+    cumulative += probabilities[1];
+    if threshold < cumulative {
+        return Strategy::Paper;
+    }
+
+    // No need to check the last condition
+    Strategy::Scissors
+}
+
+pub fn update_strategies(agents: &mut Vec<Agent>, matrix: &Network) {
+    let mut rng = rand::rng();
+    let random_numbers = (0..NUM_VERTICES)
+        .map(|_| rng.random::<f32>())
+        .collect::<Vec<_>>();
+
+    let new_strats = (0..NUM_VERTICES)
+        .into_par_iter()
+        .map(|i| get_new_strat(&agents, matrix, i, random_numbers[i]))
+        .collect::<Vec<_>>();
+
+    agents
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, agent)| agent.strategy = new_strats[i]);
 }
 
 // function to print out the straetgey of every agent in a list. Each such be a verry different looking charachter thats the same width
 
-pub fn print_agents(agents: &Vec<Agent>) {
+pub fn print_agents(agents: &[Agent; NUM_VERTICES]) {
     for agent in agents {
         let strategy = match agent.strategy {
             Strategy::Rock => "R",
@@ -137,38 +156,9 @@ pub fn print_agents(agents: &Vec<Agent>) {
     println!();
 }
 
-pub fn print_payoffs(agents: &Vec<Agent>) {
+pub fn print_payoffs(agents: &[Agent]) {
     for agent in agents {
         print!("{:4}", agent.score);
     }
     println!();
-}
-
-fn main() {
-    let mut matrix = AdjacencyMatrix::new();
-    // create a m,atrix for a loop of 10 agents
-    for i in 0..NUM_VERTICES {
-        matrix.add_edge(i, (i + 1) % NUM_VERTICES);
-    }
-    // create a vector of agents with random strategies
-    let mut agents = Vec::new();
-    for _ in 0..NUM_VERTICES {
-        let random_strategy = match rand::random::<u32>() % 3 {
-            0 => Strategy::Rock,
-            1 => Strategy::Paper,
-            2 => Strategy::Scissors,
-            _ => panic!("Invalid random number"),
-        };
-        agents.push(Agent {
-            strategy: random_strategy,
-            score: 0,
-        });
-    }
-
-    // do 100 iterations of the tournament
-    for _ in 0..100 {
-        agents = play_tournament(&matrix, agents);
-        agents = update_strategies(agents, &matrix);
-        print_agents(&agents);
-    }
 }
