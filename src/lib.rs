@@ -1,7 +1,5 @@
 use lazy_static::lazy_static;
 use rand::prelude::*;
-// use rayon::iter::IntoParallelIterator;
-// use rayon::iter::ParallelIterator;
 
 pub const BETA: f32 = 1.0;
 pub const NUM_VERTICES: usize = 128 * 128;
