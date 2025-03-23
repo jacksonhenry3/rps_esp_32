@@ -4,13 +4,8 @@ use rps::*;
 use std::hint::black_box;
 
 fn play_benchmark(c: &mut Criterion) {
-    let mut agents = vec![
-        Agent {
-            strategy: Strategy::Rock,
-            score: 1,
-        };
-        NUM_VERTICES
-    ];
+    let mut strategies = vec![Strategy::Rock; NUM_VERTICES];
+    let mut scores = vec![1; NUM_VERTICES];
     for index in 1..NUM_VERTICES {
         let random_strategy = match rand::random::<u32>() % 3 + 1 {
             1 => Strategy::Rock,
@@ -18,31 +13,24 @@ fn play_benchmark(c: &mut Criterion) {
             3 => Strategy::Scissors,
             _ => panic!("Invalid random number"),
         };
-        agents[index] = Agent {
-            strategy: random_strategy,
-            score: 1,
-        };
+        strategies[index] = random_strategy;
     }
-    let mut matrix = Network::new();
-    for i in 1..NUM_VERTICES {
-        matrix.add_edge(i, (i + 2) % NUM_VERTICES);
-    }
+    let matrix = Network::new();
 
     c.bench_function("Play benchmark", |b| {
         b.iter(|| {
-            play_tournament(black_box(&mut agents), black_box(&matrix));
+            play_tournament(
+                black_box(&strategies),
+                black_box(&mut scores),
+                black_box(&matrix),
+            );
         })
     });
 }
 
 fn update_benchmark(c: &mut Criterion) {
-    let mut agents = vec![
-        Agent {
-            strategy: Strategy::Rock,
-            score: 1,
-        };
-        NUM_VERTICES
-    ];
+    let mut strategies = vec![Strategy::Rock; NUM_VERTICES];
+    let mut scores = vec![1; NUM_VERTICES];
     for index in 1..NUM_VERTICES {
         let random_strategy = match rand::random::<u32>() % 3 + 1 {
             1 => Strategy::Rock,
@@ -50,19 +38,18 @@ fn update_benchmark(c: &mut Criterion) {
             3 => Strategy::Scissors,
             _ => panic!("Invalid random number"),
         };
-        agents[index] = Agent {
-            strategy: random_strategy,
-            score: 2,
-        };
+        strategies[index] = random_strategy;
     }
-    let mut matrix = Network::new();
-    for i in 1..NUM_VERTICES {
-        matrix.add_edge(i, (i + 2) % NUM_VERTICES);
-    }
+
+    let matrix = Network::new();
 
     c.bench_function("Update benchmark", |b| {
         b.iter(|| {
-            update_strategies(black_box(&mut agents), black_box(&matrix));
+            update_strategies(
+                black_box(&mut strategies),
+                black_box(&scores),
+                black_box(&matrix),
+            );
         })
     });
 }
