@@ -1,27 +1,10 @@
 // #![no_std]
 
 use rps::*;
+mod visualization;
 
 fn main() {
-    let mut strategies = [Strategy::Rock; NUM_VERTICES];
-    let mut scores = [1; NUM_VERTICES];
-    for index in 1..NUM_VERTICES {
-        let random_strategy = match rand::random::<u32>() % 3 + 1 {
-            1 => Strategy::Rock,
-            2 => Strategy::Paper,
-            3 => Strategy::Scissors,
-            _ => panic!("Invalid random number"),
-        };
-        strategies[index] = random_strategy;
-    }
-
-    let matrix = Network::new();
-
-    // do 100 iterations of the tournament
-    for i in 0..100 {
-        println!("{}", i);
-        play_tournament(&strategies, &mut scores, &matrix);
-        update_strategies(&mut strategies, &scores, &matrix);
-        // print_agents(&agents);
-    }
+    // The original main loop has been moved into the visualization module
+    // to run the simulation and render it frame-by-frame.
+    visualization::run_simulation_with_visualization();
 }

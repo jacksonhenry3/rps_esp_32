@@ -3,10 +3,11 @@
 use rand::prelude::*;
 use core::array;
 
-pub const BETA: f32 = 1.0;
+pub const BETA: f32 = 0.1;
 pub const NUM_VERTICES: usize = 64 * 64;
 pub const DIM:usize = 64;
-pub const PAYOFF_MATRIX: [[i32; 3]; 3] = [[1, 0, 2], [2, 1, 0], [0, 2, 1]];
+// pub const PAYOFF_MATRIX: [[i32; 3]; 3] = [[0, -1, 1], [1, 0, -1], [-1, 1, 0]];
+pub const PAYOFF_MATRIX: [[i32; 3]; 3] = [[1,0,2], [2, 1, 0], [0, 2, 1]];
 
 include!(concat!(env!("OUT_DIR"), "/exp_table.rs"));
 
@@ -38,10 +39,10 @@ impl Network {
     pub fn new() -> Self {
         let mut edges = [(0,0);2*NUM_VERTICES];
         for i in (0..2*NUM_VERTICES).step_by(2) {
-            let x_index = i / DIM;
-            let y_index = i % DIM;
-            edges[i] =(i, (x_index + 1) % DIM + y_index * DIM);
-            edges[i+1] =(i, x_index + ((y_index + 1) % DIM) * DIM);
+            let x_index = (i/2) / DIM;
+            let y_index = (i/2) % DIM;
+            edges[i] =(x_index + y_index * DIM, (x_index + 1) % DIM + y_index * DIM);
+            edges[i+1] =(x_index + y_index * DIM, x_index + ((y_index + 1) % DIM) * DIM);
         }
         Network { edges }
     }
@@ -70,6 +71,23 @@ pub fn play_tournament(strategies: &[Strategy], scores: &mut [i32], network: &Ne
         scores[*agent_1_id] += agent_1_payoff;
         scores[*agent_2_id] += agent2_payoff;
     }
+
+    // renormlalize scores so they dont get too large
+    // get the max score, divide it by 50, and divide all scores by that amount
+    let max_score = *scores.iter().max().unwrap();
+    if max_score > 50 {
+        // println!("Renormalizing scores, max score: {}", max_score);
+        let divisor = (max_score / 10);
+        for score in scores.iter_mut() {
+            // println!("Score before renormalization: {}", *score);
+            *score /= divisor;
+            // println!("Score after renormalization: {}", *score);
+            // println!(".");
+        }
+        
+    }
+     let new_max = *scores.iter().max().unwrap();
+
 }
 
 pub fn get_local_scores(
