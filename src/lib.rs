@@ -1,31 +1,30 @@
-use lazy_static::lazy_static;
+#![no_std]
+
 use rand::prelude::*;
+use core::array;
 
 pub const BETA: f32 = 1.0;
-pub const NUM_VERTICES: usize = 128 * 128;
+pub const NUM_VERTICES: usize = 64 * 64;
 pub const PAYOFF_MATRIX: [[i32; 3]; 3] = [[1, 0, 2], [2, 1, 0], [0, 2, 1]];
 
-lazy_static! {
-    static ref EXP_TABLE: [f32; 2001] = {
+include!(concat!(env!("OUT_DIR"), "/exp_table.rs"));
 
-        // exp above 89 gives inf
-        let mut table = [0.0; 2001];
-        for i in -1000..=1000 {
-            table[(i + 1000) as usize] = (i as f32 * BETA).exp();
-        }
-        table
-    };
+pub fn get_val(i: usize) -> f32 {
+    TABLE[i]
 }
+
+
 
 pub fn exp(n: i32) -> f32 {
     if -1000 <= n && n <= 1000 {
-        return EXP_TABLE[(n + 1000) as usize];
+        return get_val((n + 1000) as usize);
     };
     (n as f32 * BETA).exp()
 }
-//  an adjacency matrix with a constant,runtime set number of vertices
+
+
 pub struct Network {
-    edges: Vec<(usize, usize)>,
+    edges: [(usize, usize);NUM_VERTICES],
 }
 
 impl Default for Network {
@@ -36,9 +35,9 @@ impl Default for Network {
 
 impl Network {
     pub fn new() -> Self {
-        let mut edges = Vec::with_capacity(2);
+        let mut edges = [(0,0);NUM_VERTICES];
         for i in 0..NUM_VERTICES {
-            edges.extend_from_slice(&[(i, (i + 1) % NUM_VERTICES)]);
+            edges[i] =(i, (i + 1) % NUM_VERTICES);
         }
         Network { edges }
     }
@@ -73,10 +72,10 @@ pub fn get_local_scores(
     strategies: &[Strategy],
     scores: &[i32],
     network: &Network,
-) -> Vec<[i32; 3]> {
+) -> [[i32; 3];NUM_VERTICES] {
     // returns an array whos elements are the local coinstructed sciore of each strategy  as
     // measured by the onode at that index.
-    let mut results = vec![[0, 0, 0]; NUM_VERTICES];
+    let mut results = [[0, 0, 0]; NUM_VERTICES];
     for (agent1_id, agent2_id) in network.edges.iter() {
         let (agent_1_strategy, agent_2_strategy) = (strategies[*agent1_id], strategies[*agent2_id]);
 
@@ -113,17 +112,19 @@ pub fn get_new_strat(random_number: f32, scores: &[i32; 3]) -> Strategy {
     Strategy::Scissors
 }
 
-pub fn update_strategies(strategies: &mut Vec<Strategy>, scores: &[i32], network: &Network) {
+pub fn update_strategies(strategies: &mut [Strategy; NUM_VERTICES], scores: &[i32], network: &Network) {
     let mut rng = rand::rng();
-    let random_numbers = (0..NUM_VERTICES)
-        .map(|_| rng.random::<f32>())
-        .collect::<Vec<_>>();
+    // let random_numbers:[f32; NUM_VERTICES] = (0..NUM_VERTICES)
+    //     .map(|_| rng.random::<f32>())
+    //     .collect();
 
     let local_scores = get_local_scores(strategies, scores, network);
-    let new_strats = (0..NUM_VERTICES)
-        // .into_par_iter()
-        .map(|i| get_new_strat(random_numbers[i], &local_scores[i]))
-        .collect::<Vec<_>>();
+    // let new_strats = (0..NUM_VERTICES)
+    //     // .into_par_iter()
+    //     .map(|i| get_new_strat(random_numbers[i], &local_scores[i]))
+    //     .collect();
+
+    let new_strats= array::from_fn(|i| get_new_strat(rng.random::<f32>(), &local_scores[i]));
     *strategies = new_strats;
 }
 
@@ -132,8 +133,13 @@ mod tests {
     use super::*;
 
     // Helper to create a custom test Network.
-    fn test_network(edges: Vec<(usize, usize)>) -> Network {
-        // Bypass the default constructor by directly providing the edges.
+    fn test_network(edges_vec: &[(usize, usize)]) -> Network {
+        // Fill with a harmless edge to a vertex with zero score so extra edges don't affect tests.
+        let filler = (NUM_VERTICES - 1, NUM_VERTICES - 1);
+        let mut edges = [filler; NUM_VERTICES];
+        for (i, &e) in edges_vec.iter().enumerate() {
+            edges[i] = e;
+        }
         Network { edges }
     }
 
@@ -149,23 +155,26 @@ mod tests {
 
     #[test]
     fn test_get_local_scores_mechanics() {
-        // Construct a small network with 3 vertices.
+        // Construct a small network with 3 meaningful edges at the beginning.
         // Edges: (0,1), (1,2), (2,0)
-        let network = test_network(vec![(0, 1), (1, 2), (2, 0)]);
-        let strategies = vec![Strategy::Rock, Strategy::Paper, Strategy::Scissors];
-        let scores = vec![10, 20, 30];
+        let network = test_network(&[(0, 1), (1, 2), (2, 0)]);
 
-        // Expected local scores:
-        // For edge (0,1):
-        //   Vertex 1: add score[0]=10 to index Rock.
-        //   Vertex 0: add score[1]=20 to index Paper.
-        // For edge (1,2):
-        //   Vertex 2: add score[1]=20 to index Paper.
-        //   Vertex 1: add score[2]=30 to index Scissors.
-        // For edge (2,0):
-        //   Vertex 0: add score[2]=30 to index Scissors.
-        //   Vertex 2: add score[0]=10 to index Rock.
-        let expected = vec![[10, 20, 30], [10, 20, 30], [10, 20, 30]];
+        // Create full-size arrays but only set the first three vertices to meaningful values.
+        let mut strategies = [Strategy::Rock; NUM_VERTICES];
+        strategies[0] = Strategy::Rock;
+        strategies[1] = Strategy::Paper;
+        strategies[2] = Strategy::Scissors;
+
+        let mut scores = [0_i32; NUM_VERTICES];
+        scores[0] = 10;
+        scores[1] = 20;
+        scores[2] = 30;
+
+        // Expected local scores for vertices 0..2; rest remain zeros.
+        let mut expected = [[0_i32; 3]; NUM_VERTICES];
+        expected[0] = [10, 20, 30];
+        expected[1] = [10, 20, 30];
+        expected[2] = [10, 20, 30];
 
         let computed = get_local_scores(&strategies, &scores, &network);
         assert_eq!(computed, expected);
@@ -185,29 +194,38 @@ mod tests {
 
     #[test]
     fn test_play_tournament_mechanics() {
-        // Create a 2-vertex network with two directed edges.
-        let network = test_network(vec![(0, 1), (1, 0)]);
-        let strategies = vec![Strategy::Rock, Strategy::Paper];
-        let mut scores = vec![0, 0];
+        // Create a 2-vertex network with two directed edges placed at the beginning.
+        let network = test_network(&[(0, 1), (1, 0)]);
+
+        // Full-size arrays with only indices 0 and 1 meaningful.
+        let mut strategies = [Strategy::Rock; NUM_VERTICES];
+        strategies[0] = Strategy::Rock;
+        strategies[1] = Strategy::Paper;
+
+        let mut scores = [0_i32; NUM_VERTICES];
         play_tournament(&strategies, &mut scores, &network);
-        // For edge (0,1): Rock vs. Paper yields:
-        //    agent0: PAYOFF_MATRIX[Rock][Paper], agent1: PAYOFF_MATRIX[Paper][Rock]
-        // For edge (1,0): the same again.
+
+        // For edge (0,1) and (1,0): each matchup occurs twice.
         let expected_score0 = PAYOFF_MATRIX[Strategy::Rock as usize][Strategy::Paper as usize] * 2;
         let expected_score1 = PAYOFF_MATRIX[Strategy::Paper as usize][Strategy::Rock as usize] * 2;
-        assert_eq!(scores, vec![expected_score0, expected_score1]);
+        assert_eq!(scores[0], expected_score0);
+        assert_eq!(scores[1], expected_score1);
     }
 
     #[test]
     fn test_update_strategies_statistical() {
         let iterations = 1000;
         let mut counts = [0; 3]; // counts for Rock, Paper, Scissors
-        // Create a network with a single vertex and self-edge.
-        let network = test_network(vec![(0, 0)]);
-        let scores = vec![0]; // Equal scores yield uniform probabilities.
+
+        // Network with a single meaningful edge at index 0 (self-edge for vertex 0).
+        let network = test_network(&[(0, 0)]);
+
+        // Scores array with zeros -> uniform probabilities.
+        let scores = [0_i32; NUM_VERTICES];
+
         for _ in 0..iterations {
-            // Start with an arbitrary strategy.
-            let mut strategies = vec![Strategy::Rock];
+            // Full-size strategies array; we inspect index 0 only.
+            let mut strategies = [Strategy::Rock; NUM_VERTICES];
             update_strategies(&mut strategies, &scores, &network);
             match strategies[0] {
                 Strategy::Rock => counts[0] += 1,
@@ -230,3 +248,4 @@ mod tests {
         }
     }
 }
+

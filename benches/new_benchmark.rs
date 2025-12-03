@@ -3,25 +3,27 @@ extern crate criterion;
 use criterion::{Criterion, black_box};
 use rand::prelude::*;
 use rps::*; // Replace with your crate name
-//
+use core::array;
+
+
+pub const NUM_VERTICES: usize = 64 * 64;
+
 // Helper to generate a random vector of strategies.
-fn random_strategies() -> Vec<Strategy> {
+fn random_strategies() -> [Strategy;NUM_VERTICES] {
     let mut rng = rand::rng();
-    (0..NUM_VERTICES)
-        .map(|_| match rng.random_range(0..3) {
+   
+    array::from_fn(|_| match rng.random_range(0..3) {
             0 => Strategy::Rock,
             1 => Strategy::Paper,
             _ => Strategy::Scissors,
         })
-        .collect()
 }
 
 // Helper to generate a random vector of scores.
-fn random_scores() -> Vec<i32> {
+fn random_scores() -> [i32;NUM_VERTICES] {
     let mut rng = rand::rng();
-    (0..NUM_VERTICES)
-        .map(|_| rng.random_range(0..100))
-        .collect()
+    array::from_fn(|_| rng.random_range(0..100))
+    
 }
 
 fn bench_exp(c: &mut Criterion) {
@@ -117,11 +119,11 @@ fn bench_update_strategies(c: &mut Criterion) {
 
 criterion_group!(
     new_benchmark,
-    // bench_exp,
-    // bench_play_game,
+    bench_exp,
+    bench_play_game,
     bench_play_tournament,
-    // bench_get_local_scores,
-    // bench_get_new_strat,
+    bench_get_local_scores,
+    bench_get_new_strat,
     bench_update_strategies
 );
 criterion_main!(new_benchmark);
