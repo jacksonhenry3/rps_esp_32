@@ -5,6 +5,7 @@ use core::array;
 
 pub const BETA: f32 = 1.0;
 pub const NUM_VERTICES: usize = 64 * 64;
+pub const DIM:usize = 64;
 pub const PAYOFF_MATRIX: [[i32; 3]; 3] = [[1, 0, 2], [2, 1, 0], [0, 2, 1]];
 
 include!(concat!(env!("OUT_DIR"), "/exp_table.rs"));
@@ -24,7 +25,7 @@ pub fn exp(n: i32) -> f32 {
 
 
 pub struct Network {
-    edges: [(usize, usize);NUM_VERTICES],
+    edges: [(usize, usize);2*NUM_VERTICES],
 }
 
 impl Default for Network {
@@ -35,9 +36,12 @@ impl Default for Network {
 
 impl Network {
     pub fn new() -> Self {
-        let mut edges = [(0,0);NUM_VERTICES];
-        for i in 0..NUM_VERTICES {
-            edges[i] =(i, (i + 1) % NUM_VERTICES);
+        let mut edges = [(0,0);2*NUM_VERTICES];
+        for i in (0..2*NUM_VERTICES).step_by(2) {
+            let x_index = i / DIM;
+            let y_index = i % DIM;
+            edges[i] =(i, (x_index + 1) % DIM + y_index * DIM);
+            edges[i+1] =(i, x_index + ((y_index + 1) % DIM) * DIM);
         }
         Network { edges }
     }
@@ -136,7 +140,7 @@ mod tests {
     fn test_network(edges_vec: &[(usize, usize)]) -> Network {
         // Fill with a harmless edge to a vertex with zero score so extra edges don't affect tests.
         let filler = (NUM_VERTICES - 1, NUM_VERTICES - 1);
-        let mut edges = [filler; NUM_VERTICES];
+        let mut edges = [filler; 2* NUM_VERTICES];
         for (i, &e) in edges_vec.iter().enumerate() {
             edges[i] = e;
         }
